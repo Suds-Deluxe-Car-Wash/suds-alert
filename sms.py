@@ -2,21 +2,25 @@
 Suds Alert — SMS Delivery via Twilio
 ======================================
 Sends SMS alerts to recipients and tracks delivery status.
+Uses Messaging Service SID for A2P 10DLC compliance.
 """
 
 import logging
 from twilio.rest import Client
 from twilio.base.exceptions import TwilioRestException
 
-from config import TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER
+from config import TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER, TWILIO_MESSAGING_SERVICE_SID
 
 logger = logging.getLogger("suds_alert")
 
 
 def _get_twilio_client() -> Client | None:
     """Initialize Twilio client. Returns None if not configured."""
-    if not all([TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER]):
+    if not all([TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN]):
         logger.warning("Twilio credentials not configured — SMS will be simulated")
+        return None
+    if not TWILIO_MESSAGING_SERVICE_SID and not TWILIO_FROM_NUMBER:
+        logger.warning("Neither Messaging Service SID nor From Number configured — SMS will be simulated")
         return None
     return Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
@@ -61,11 +65,19 @@ def send_sms_alerts(recipients: list[dict], body: str) -> list[dict]:
             continue
 
         try:
-            message = client.messages.create(
-                body=body,
-                from_=TWILIO_FROM_NUMBER,
-                to=phone,
-            )
+            # Prefer Messaging Service SID for A2P compliance
+            if TWILIO_MESSAGING_SERVICE_SID:
+                message = client.messages.create(
+                    body=body,
+                    messaging_service_sid=TWILIO_MESSAGING_SERVICE_SID,
+                    to=phone,
+                )
+            else:
+                message = client.messages.create(
+                    body=body,
+                    from_=TWILIO_FROM_NUMBER,
+                    to=phone,
+                )
             logger.info(f"SMS sent to {name} ({phone}) — SID: {message.sid}")
             results.append({
                 "name": name,
